@@ -78,8 +78,10 @@ async function rawFetch(path, { method = 'GET', body, headers = {}, token } = {}
   let res;
   try {
     res = await fetch(SUPABASE_URL + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
-  } catch {
-    throw new NetError('Ingen kontakt med servern');
+  } catch (err) {
+    const e = new NetError('Ingen kontakt med servern');
+    e.detail = err?.message || String(err);
+    throw e;
   }
   const text = await res.text();
   let json = null;
@@ -141,9 +143,12 @@ export async function signIn(email, password) {
   try {
     j = await rawFetch('/auth/v1/token?grant_type=password', { method: 'POST', body: { email: email.trim(), password } });
   } catch (e) {
-    if (e instanceof ApiError && (e.status === 400 || e.status === 401)) {
-      if (/confirm/i.test(e.code || e.message)) throw new AuthError('Kontot är inte bekräftat. Bekräfta användaren i Supabase.');
-      throw new AuthError('Fel e-post eller lösenord.');
+    if (e instanceof ApiError) {
+      const what = `${e.code || ''} ${e.message || ''}`;
+      if (/confirm/i.test(what)) throw new AuthError('Kontot är inte bekräftat. Kryssa i Auto Confirm User eller bekräfta användaren i Supabase.');
+      if (/api ?key|apikey/i.test(what)) throw new AuthError(`Appen har fel nyckel till servern (${e.message}). Kontrollera js/config.js.`);
+      if (e.status === 400 && /invalid_credentials|invalid login|invalid_grant/i.test(what)) throw new AuthError('Fel e-post eller lösenord. Använd användaren som skapades under Authentication → Users i Supabase.');
+      throw new AuthError(`Inloggningen misslyckades: ${e.message} (felkod ${e.status}${e.code ? `, ${e.code}` : ''}).`);
     }
     throw e;
   }

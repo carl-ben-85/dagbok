@@ -8,7 +8,7 @@ import {
 import { buildDays, weekSummary, findPatterns, medChangeEffects, rolling } from './analysis.js';
 import { timeChart, barChart, geometry, PAD_R_CMP } from './charts.js';
 
-const APP_VERSION = '0.4.2';
+const APP_VERSION = '0.4.3';
 const BACKUP_INTERVAL_DAYS = 7;
 
 const DEFAULT_SCALES = [
@@ -1534,7 +1534,7 @@ function showError(form, msg) {
   err.textContent = msg;
   err.hidden = false;
 }
-const errText = (e) => (e instanceof sync.NetError ? 'Ingen kontakt med servern. Kontrollera uppkopplingen och försök igen.' : e?.message || 'Något gick fel.');
+const errText = (e) => (e instanceof sync.NetError ? `Ingen kontakt med servern${e.detail ? ` (${e.detail})` : ''}. Kontrollera uppkopplingen och försök igen.` : e?.message || 'Något gick fel.');
 
 function openLoginSheet() {
   const st = sync.getState();
