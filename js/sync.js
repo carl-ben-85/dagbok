@@ -179,6 +179,24 @@ export async function signOut(message = '') {
   setStatus('off', message);
 }
 
+// Raderar allt på servern och på telefonen. Inloggningen behålls, så att synken
+// börjar om från en tom server.
+export async function resetEverything() {
+  const wasSignedIn = signedIn();
+  clearTimeout(timer);
+  if (wasSignedIn) await api('/rest/v1/rpc/delete_my_data', { method: 'POST', body: {} });
+  await db.clearAll(wasSignedIn ? ['sync'] : []);
+  if (wasSignedIn) {
+    meta = { ...meta, cursor: null, serverTag: null, lastSyncAt: null };
+    await saveMeta();
+    setStatus('idle');
+    schedule(300);
+  } else {
+    meta = null;
+    setStatus('off');
+  }
+}
+
 export async function deleteServerData() {
   await api('/rest/v1/rpc/delete_my_data', { method: 'POST', body: {} });
   await db.markAllPending();

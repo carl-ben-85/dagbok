@@ -193,6 +193,22 @@ export function delMeta(key) {
   return run('meta', 'readwrite', (s) => { s.delete(key); });
 }
 
+// Tömmer all lokal data. Nycklar i `keepMeta` (t.ex. inloggningen) behålls.
+export function clearAll(keepMeta = []) {
+  return open().then((d) => new Promise((resolve, reject) => {
+    const t = d.transaction(['records', 'blobs', 'meta'], 'readwrite');
+    t.objectStore('records').clear();
+    t.objectStore('blobs').clear();
+    const meta = t.objectStore('meta');
+    meta.getAllKeys().onsuccess = (e) => {
+      for (const k of e.target.result) if (!keepMeta.includes(k)) meta.delete(k);
+    };
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error || new Error('Transaktionen avbröts'));
+  }));
+}
+
 export function putBlob(id, blob) {
   return run('blobs', 'readwrite', (s) => { s.put(blob, id); });
 }

@@ -8,7 +8,7 @@ import {
 import { buildDays, weekSummary, findPatterns, medChangeEffects, rolling } from './analysis.js';
 import { timeChart, barChart, geometry, PAD_R_CMP } from './charts.js';
 
-const APP_VERSION = '0.4.3';
+const APP_VERSION = '0.4.4';
 const BACKUP_INTERVAL_DAYS = 7;
 
 const DEFAULT_SCALES = [
@@ -1583,6 +1583,52 @@ async function syncLogout() {
   render({ keep: true });
 }
 
+async function resetAll() {
+  const online = syncOn(sync.getState());
+  const ok = await confirmSheet({
+    title: 'Radera all data?',
+    text: online
+      ? 'Allt raderas, både här och på servern. Andra telefoner som synkar loggas ut och behöver också radera sin data under Mer.'
+      : 'Allt på den här telefonen raderas. Exportera en säkerhetskopia först om du vill spara något.',
+    ok: 'Fortsätt',
+    danger: true,
+  });
+  if (!ok) return;
+  openSheet(`
+    <form class="form" novalidate>
+      <h2>Bekräfta radering</h2>
+      <p class="sheet-text">Skriv RADERA för att ta bort all data. Det går inte att ångra.</p>
+      <label class="field"><span>Bekräftelse</span><input name="word" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+      <p class="form-error" role="alert" hidden></p>
+      <div class="sheet-actions">
+        <button type="button" class="btn" data-close>Avbryt</button>
+        <button class="btn danger-solid">Radera</button>
+      </div>
+    </form>`, (dlg) => {
+    const form = dlg.querySelector('form');
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      if (form.word.value.trim().toUpperCase() !== 'RADERA') { showError(form, 'Skriv RADERA för att bekräfta.'); return; }
+      const btn = form.querySelector('button.danger-solid');
+      busyButton(btn, 'Raderar …');
+      try {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+        cur = null;
+        await sync.resetEverything();
+        settings = mergeSettings(null);
+        anaCompare = null;
+        closeSheet();
+        toast('All data är raderad');
+        go('#idag');
+      } catch (err) {
+        freeButton(btn);
+        showError(form, errText(err));
+      }
+    };
+  });
+}
+
 async function syncWipe() {
   const ok = await confirmSheet({
     title: 'Radera all data på servern?',
@@ -1646,6 +1692,12 @@ async function renderMore() {
         <button type="button" class="btn" data-act="export-meds">Exportera medicinhistorik som CSV</button>
         <label class="btn">Importera säkerhetskopia<input type="file" accept="application/json,.json" class="vh" data-act="import-input"></label>
       </div>
+    </section>
+
+    <section class="block">
+      <h2>Börja om</h2>
+      <p class="block-intro">Tar bort alla dagar, mediciner, foton och inställningar${syncOn(sync.getState()) ? ' på den här telefonen och på servern. Du förblir inloggad' : ' på den här telefonen'}. Använd det till exempel för att rensa bort testdata.</p>
+      <button type="button" class="btn danger wide" data-act="reset-all">Radera all data</button>
     </section>
 
     <section class="block about">
@@ -2127,6 +2179,7 @@ view.addEventListener('click', async (e) => {
     case 'sync-now': sync.syncNow(); break;
     case 'sync-logout': syncLogout(); break;
     case 'sync-wipe': syncWipe(); break;
+    case 'reset-all': resetAll(); break;
     case 'export-json': exportJSON(); break;
     case 'export-days': exportDaysCSV(); break;
     case 'export-meds': exportMedsCSV(); break;

@@ -39,7 +39,8 @@ Mönstren är jämförelser, inte bevis för orsakssamband.
 - **Ny telefon.** Logga in under Mer, så hämtas all data inklusive foton.
 - **Konflikter.** Senaste ändring vinner per post, både i appen och i databasen (en äldre version kan aldrig skriva över en nyare).
 - **Utan nät** sparas allt lokalt och skickas när det finns uppkoppling igen. Raden "Sparat 14:02 och synkat" på dagens sida visar läget.
-- **Radera.** Under Mer kan all data på servern raderas (kräver att man skriver RADERA). Datan på telefonen finns kvar. Andra telefoner märker raderingen och slutar synka tills någon loggar in igen.
+- **Börja om.** Under Mer → Radera all data tas allt bort, både på telefonen och på servern, men man förblir inloggad. Andra telefoner loggas ut och behöver göra samma sak för att inte ladda upp sin gamla data igen.
+- **Radera bara serverdata.** Under Mer kan all data på servern raderas (kräver att man skriver RADERA). Datan på telefonen finns kvar. Andra telefoner märker raderingen och slutar synka tills någon loggar in igen.
 
 ### Sätta upp Supabase (en gång)
 
