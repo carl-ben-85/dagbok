@@ -8,7 +8,7 @@ import {
 import { buildDays, weekSummary, findPatterns, medChangeEffects, rolling } from './analysis.js';
 import { timeChart, barChart, geometry, PAD_R_CMP } from './charts.js';
 
-const APP_VERSION = '0.4.4';
+const APP_VERSION = '0.5.0';
 const BACKUP_INTERVAL_DAYS = 7;
 
 const DEFAULT_SCALES = [
@@ -161,6 +161,7 @@ function mergeSettings(stored) {
     diet: Array.isArray(stored?.diet) ? stored.diet.map((f) => ({ ...f })) : [],
     cardioTypes: Array.isArray(stored?.cardioTypes) ? stored.cardioTypes.map((f) => ({ ...f })) : [],
     strengthTypes: Array.isArray(stored?.strengthTypes) ? stored.strengthTypes.map((f) => ({ ...f })) : [],
+    alert: stored?.alert ? { ...stored.alert } : null,
   };
   for (const d of DEFAULT_SCALES) if (!out.scales.some((s) => s.key === d.key)) out.scales.push({ ...d });
   for (const d of DEFAULT_FLAGS) if (!out.flags.some((f) => f.key === d.key)) out.flags.push({ ...d });
@@ -1667,6 +1668,126 @@ async function syncWipe() {
   });
 }
 
+/* ---------- Avisering vid lågt mående ---------- */
+
+const NTFY = 'https://ntfy.sh/';
+
+function newTopic() {
+  const abc = 'abcdefghijkmnpqrstuvwxyz23456789';
+  return `dagbok-${[...crypto.getRandomValues(new Uint8Array(16))].map((b) => abc[b % abc.length]).join('')}`;
+}
+
+function alertSectionHTML() {
+  const a = settings.alert;
+  const st = sync.getState();
+  const wellbeing = settings.scales.find((x) => x.key === 'wellbeing' && !x.deleted && x.visible);
+  let body;
+  if (!a?.enabled) {
+    body = `
+      <p class="block-intro">Skicka en notis till någon du väljer när Allmänt mående loggas på en viss nivå eller lägre. Notisen skickas av servern, högst en gång per dag.</p>
+      <button type="button" class="btn" data-act="alert-setup">Slå på avisering</button>`;
+  } else {
+    const who = a.recipient || 'Mottagaren';
+    body = `
+      <p class="sync-status ok">På</p>
+      <p class="sync-meta">${esc(who)} får en notis när Allmänt mående är ${a.threshold} eller lägre, högst en gång per dag.</p>
+      ${st.available && !syncOn(st) ? '<p class="effect-warn">Notisen skickas av servern, så den fungerar bara när synken är på.</p>' : ''}
+      ${wellbeing ? '' : '<p class="effect-warn">Skalan Allmänt mående är dold eller borttagen, så inga notiser skickas.</p>'}
+      <details class="howto">
+        <summary>Så ställer ${esc(a.recipient || 'mottagaren')} in notiserna</summary>
+        <ol>
+          <li>Installera appen <b>ntfy</b> från App Store eller Google Play.</li>
+          <li>Tryck på <b>+</b> och prenumerera på den här kanalen:</li>
+        </ol>
+        <p class="topic"><code>${esc(a.topic)}</code></p>
+        <button type="button" class="btn small" data-act="alert-copy">Kopiera kanalnamnet</button>
+        <p class="sync-meta">Kanalnamnet fungerar som ett lösenord: den som känner till det kan läsa notiserna.</p>
+      </details>
+      <div class="stack">
+        <button type="button" class="btn" data-act="alert-test">Skicka testnotis</button>
+        <button type="button" class="btn" data-act="alert-setup">Ändra</button>
+        <button type="button" class="btn" data-act="alert-off">Stäng av</button>
+      </div>`;
+  }
+  return `
+    <section class="block" id="alert-section">
+      <h2>Avisering vid lågt mående</h2>
+      ${body}
+    </section>`;
+}
+
+function openAlertSheet() {
+  const a = settings.alert || {};
+  const t = a.threshold ?? 4;
+  openSheet(`
+    <form class="form" novalidate>
+      <h2>Avisering vid lågt mående</h2>
+      <p class="sheet-text">En notis skickas till mottagarens telefon via appen ntfy när Allmänt mående loggas på nivån eller lägre, för i dag eller i går.</p>
+      <label class="field"><span>Vem får notisen?</span><input name="recipient" value="${esc(a.recipient || '')}" autocomplete="off" autocapitalize="words" placeholder="t.ex. Calle"></label>
+      <label class="field"><span>Skicka när Allmänt mående är</span>
+        <select name="threshold">${Array.from({ length: 10 }, (_, i) => `<option value="${i}"${i === t ? ' selected' : ''}>${i} eller lägre</option>`).join('')}</select>
+      </label>
+      <div class="sheet-actions">
+        <button type="button" class="btn" data-close>Avbryt</button>
+        <button class="btn primary">Spara</button>
+      </div>
+    </form>`, (dlg) => {
+    const form = dlg.querySelector('form');
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      settings.alert = {
+        enabled: true,
+        threshold: Number(form.threshold.value),
+        recipient: form.recipient.value.trim(),
+        topic: a.topic || newTopic(),
+      };
+      await saveSettings();
+      closeSheet();
+      toast('Aviseringen är på');
+      render({ keep: true });
+      if (!a.topic) setTimeout(() => document.querySelector('#alert-section details')?.setAttribute('open', ''), 50);
+    };
+  });
+}
+
+async function alertOff() {
+  const ok = await confirmSheet({ title: 'Stäng av aviseringen?', text: 'Inga fler notiser skickas. Den går att slå på igen med samma kanal.', ok: 'Stäng av' });
+  if (!ok) return;
+  settings.alert = { ...settings.alert, enabled: false };
+  await saveSettings();
+  toast('Aviseringen är avstängd');
+  render({ keep: true });
+}
+
+async function alertTest() {
+  const a = settings.alert;
+  if (!a?.topic) return;
+  try {
+    const res = await fetch(NTFY, {
+      method: 'POST',
+      body: JSON.stringify({ topic: a.topic, title: 'Dagbok: testnotis', message: 'Aviseringen är inställd. Så här ser en notis om lågt mående ut.', tags: ['white_check_mark'] }),
+    });
+    if (!res.ok) throw new Error(`ntfy svarade ${res.status}`);
+    toast('Testnotisen är skickad');
+  } catch (err) {
+    infoSheet('Testnotisen gick inte att skicka', `Kontrollera uppkopplingen och försök igen. (${err?.message || err})`);
+  }
+}
+
+async function alertCopy(btn) {
+  try {
+    await navigator.clipboard.writeText(settings.alert.topic);
+    btn.textContent = 'Kopierat';
+  } catch {
+    const code = document.querySelector('#alert-section .topic code');
+    const r = document.createRange();
+    r.selectNodeContents(code);
+    getSelection().removeAllRanges();
+    getSelection().addRange(r);
+    btn.textContent = 'Markerat, kopiera med menyn';
+  }
+}
+
 /* ---------- Mer: inställningar och export ---------- */
 
 async function renderMore() {
@@ -1679,6 +1800,8 @@ async function renderMore() {
     <header class="pagehead"><h1>Mer</h1></header>
 
     ${syncSectionHTML()}
+
+    ${alertSectionHTML()}
 
     ${Object.keys(LISTS).map(listSectionHTML).join('')}
 
@@ -2180,6 +2303,10 @@ view.addEventListener('click', async (e) => {
     case 'sync-logout': syncLogout(); break;
     case 'sync-wipe': syncWipe(); break;
     case 'reset-all': resetAll(); break;
+    case 'alert-setup': openAlertSheet(); break;
+    case 'alert-off': alertOff(); break;
+    case 'alert-test': alertTest(); break;
+    case 'alert-copy': alertCopy(el); break;
     case 'export-json': exportJSON(); break;
     case 'export-days': exportDaysCSV(); break;
     case 'export-meds': exportMedsCSV(); break;

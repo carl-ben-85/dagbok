@@ -1,6 +1,6 @@
 // Service worker: gör att appen fungerar helt utan uppkoppling.
 // Höj versionen vid varje ny publicering så att telefonen hämtar de nya filerna.
-const VERSION = 'v0.4.4';
+const VERSION = 'v0.5.0';
 const CACHE = `dagbok-${VERSION}`;
 const ASSETS = [
   './',

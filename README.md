@@ -42,6 +42,12 @@ Mönstren är jämförelser, inte bevis för orsakssamband.
 - **Börja om.** Under Mer → Radera all data tas allt bort, både på telefonen och på servern, men man förblir inloggad. Andra telefoner loggas ut och behöver göra samma sak för att inte ladda upp sin gamla data igen.
 - **Radera bara serverdata.** Under Mer kan all data på servern raderas (kräver att man skriver RADERA). Datan på telefonen finns kvar. Andra telefoner märker raderingen och slutar synka tills någon loggar in igen.
 
+## Avisering vid lågt mående
+
+Under Mer → Avisering vid lågt mående väljs mottagare och nivå (t.ex. 4 eller lägre). När en dag med Allmänt mående på eller under nivån synkas skickar databasen en push-notis via [ntfy](https://ntfy.sh) till en hemlig kanal, högst en gång per dag och bara för i dag eller i går. Mottagaren installerar appen ntfy och prenumererar på kanalnamnet som visas i appen. Inställningen syns i appen och kan ändras eller stängas av där. Notisen innehåller bara värdet, inga anteckningar.
+
+Tekniskt: en trigger på `records` (`notify_low_wellbeing`) läser inställningen ur posten `settings` och anropar ntfy med tillägget `pg_net`. Tabellen `alert_log` ser till att det blir högst en notis per dag.
+
 ### Sätta upp Supabase (en gång)
 
 1. **Kör databasskriptet.** Öppna projektet på supabase.com → **SQL Editor** → **New query**. Klistra in hela `supabase/setup.sql` och tryck **Run**. Skriptet skapar tabellerna `sync_state`, `records` och `photos` och vyerna `dagbok` och `medicinhistorik`, med radsäkerhet så att varje användare bara når sina egna rader. Det går att köra igen utan att något försvinner, och det ersätter tabellerna från den tidigare krypterade versionen om den har körts.

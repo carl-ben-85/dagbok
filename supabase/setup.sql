@@ -54,7 +54,16 @@ create table if not exists public.photos (
   primary key (user_id, id)
 );
 
+-- Skickade aviseringar, högst en per dag
+create table if not exists public.alert_log (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  date date not null,
+  sent_at timestamptz not null default now(),
+  primary key (user_id, date)
+);
+
 -- Radsäkerhet: varje inloggad användare når bara sina egna rader. Utloggade når ingenting.
+alter table public.alert_log enable row level security;
 alter table public.sync_state enable row level security;
 alter table public.records enable row level security;
 alter table public.photos enable row level security;
@@ -67,11 +76,16 @@ drop policy if exists "egna rader" on public.records;
 create policy "egna rader" on public.records for all to authenticated
   using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 
+drop policy if exists "egna rader" on public.alert_log;
+create policy "egna rader" on public.alert_log for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+
 drop policy if exists "egna rader" on public.photos;
 create policy "egna rader" on public.photos for all to authenticated
   using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 
-revoke all on public.sync_state, public.records, public.photos from anon;
+revoke all on public.sync_state, public.records, public.photos, public.alert_log from anon;
+grant select, delete on public.alert_log to authenticated;
 grant select, insert, update, delete on public.sync_state, public.records, public.photos to authenticated;
 
 -- Skickar poster. Senaste ändring vinner per post: en äldre version skriver aldrig över en nyare.
@@ -120,9 +134,72 @@ security invoker
 set search_path = ''
 as $$
   delete from public.photos where user_id = auth.uid();
+  delete from public.alert_log where user_id = auth.uid();
   delete from public.records where user_id = auth.uid();
   delete from public.sync_state where user_id = auth.uid();
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Avisering vid lågt mående. Ställs in i appen under Mer (sparas i inställningarna).
+-- När en dag med Allmänt mående på eller under nivån sparas skickas en push-notis
+-- via ntfy.sh, högst en gång per dag och bara för i dag eller i går.
+-- ---------------------------------------------------------------------------
+
+create extension if not exists pg_net;
+
+create or replace function public.notify_low_wellbeing()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  cfg jsonb;
+  v numeric;
+  lim numeric;
+  today date := (now() at time zone 'Europe/Stockholm')::date;
+  sent integer;
+begin
+  if new.type <> 'day' or new.deleted or new.date is null then return new; end if;
+  if new.date < today - 1 or new.date > today then return new; end if;
+  v := nullif(new.data -> 'scales' ->> 'wellbeing', '')::numeric;
+  if v is null then return new; end if;
+
+  select r.data -> 'alert' into cfg
+    from public.records as r
+   where r.user_id = new.user_id and r.id = 'settings' and not r.deleted;
+  if cfg is null or coalesce((cfg ->> 'enabled')::boolean, false) = false then return new; end if;
+  if coalesce(cfg ->> 'topic', '') !~ '^[A-Za-z0-9_-]{8,64}$' then return new; end if;
+  lim := coalesce((cfg ->> 'threshold')::numeric, 4);
+  if v > lim then return new; end if;
+
+  insert into public.alert_log (user_id, date) values (new.user_id, new.date) on conflict do nothing;
+  get diagnostics sent = row_count;
+  if sent = 0 then return new; end if;
+
+  perform net.http_post(
+    url := 'https://ntfy.sh/',
+    body := jsonb_build_object(
+      'topic', cfg ->> 'topic',
+      'title', 'Dagbok: lågt mående',
+      'message', format('Allmänt mående %s av 10 %s.', v, case when new.date = today then 'i dag' else 'i går' end),
+      'priority', 4,
+      'tags', jsonb_build_array('chart_with_downwards_trend')
+    )
+  );
+  return new;
+exception when others then
+  -- En misslyckad notis får aldrig stoppa synken.
+  return new;
+end;
+$$;
+
+revoke all on function public.notify_low_wellbeing() from public, anon, authenticated;
+
+drop trigger if exists notify_low_wellbeing on public.records;
+create trigger notify_low_wellbeing
+  after insert or update on public.records
+  for each row execute function public.notify_low_wellbeing();
 
 revoke all on function public.push_records(jsonb) from public, anon;
 revoke all on function public.delete_my_data() from public, anon;

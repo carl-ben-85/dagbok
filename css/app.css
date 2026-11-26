@@ -810,6 +810,22 @@ textarea::placeholder, input::placeholder { color: var(--muted); opacity: 0.8; }
 .sync-meta { margin: 4px 0 12px; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
 #sync-section .btn.wide { margin-top: 8px; }
 
+.howto { margin: 12px 0; padding: 12px 14px; border-radius: 14px; background: var(--surface); }
+.howto summary { font-weight: 600; cursor: pointer; min-height: 32px; display: flex; align-items: center; }
+.howto ol { margin: 10px 0 6px; padding-left: 20px; display: grid; gap: 4px; }
+.howto .topic { margin: 8px 0; }
+.howto code {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sunken);
+  font: 600 16px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  overflow-wrap: anywhere;
+  -webkit-user-select: all;
+  user-select: all;
+}
+#alert-section .stack { margin-top: 4px; }
+
 /* ---------- Ark ---------- */
 
 dialog#sheet {
